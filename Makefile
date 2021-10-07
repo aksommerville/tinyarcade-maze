@@ -3,7 +3,7 @@ all:
 PRECMD=echo "  $(@F)" ; mkdir -p $(@D) ;
 
 # Likely to change.
-PROJECT_NAME:=0002
+PROJECT_NAME:=maze
 PORT:=ttyACM0
 IDEROOT:=/opt/arduino-1.8.16
 

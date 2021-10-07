@@ -1,16 +1,62 @@
 #include <stdint.h>
+#include <math.h>
 #include "tinyc.h"
+#include "softarcade.h"
 
-void audio_init();
-void audio_play(const int16_t *v,int c); // Borrows (v)
+struct softarcade_synth synth={0};
 
-#define PLAY_SOUND(name) audio_play(name,sizeof(name)/sizeof(int16_t));
+int16_t tinyc_client_update_synthesizer() {
+  return softarcade_synth_update(&synth);
+}
 
-/* My stuff...
- ******************************************************************************************/
+// There can be up to 256 waves and 256 PCMs -- we'd run out of memory way before that, I think.
+static int16_t mywave1[SOFTARCADE_WAVE_SIZE_SAMPLES];
+static uint8_t mywave1_init=0;
+static int16_t mywave2[SOFTARCADE_WAVE_SIZE_SAMPLES];
+static uint8_t mywave2_init=0;
+static int16_t mywave3[SOFTARCADE_WAVE_SIZE_SAMPLES];
+static uint8_t mywave3_init=0;
 
-static int16_t beep[1000];
-static int16_t boop[1000];
+static const int16_t *get_wave(uint8_t waveid,void *userdata) {
+  switch (waveid%3+1) {
+    case 1: { // square
+        if (!mywave1_init) {
+          memset(mywave1,0x18,SOFTARCADE_WAVE_SIZE_SAMPLES);
+          memset(mywave1+(SOFTARCADE_WAVE_SIZE_SAMPLES>>1),0xe8,SOFTARCADE_WAVE_SIZE_SAMPLES);
+          mywave1_init=1;
+        }
+        return mywave1;
+      }
+    case 2: { // sine
+        if (!mywave2_init) {
+          int16_t *v=mywave2;
+          int i=SOFTARCADE_WAVE_SIZE_SAMPLES;
+          for (;i-->0;v++) {
+            *v=
+              sinf((i*M_PI*2.0f)/SOFTARCADE_WAVE_SIZE_SAMPLES)*22000+
+              sinf((i*M_PI*4.0f)/SOFTARCADE_WAVE_SIZE_SAMPLES)*10000
+            ;
+          }
+          mywave2_init=1;
+        }
+        return mywave2;
+      }
+    case 3: { // saw
+        if (!mywave3_init) {
+          int16_t *v=mywave3;
+          int i=SOFTARCADE_WAVE_SIZE_SAMPLES;
+          for (;i-->0;v++) *v=(i*0x1fff)/SOFTARCADE_WAVE_SIZE_SAMPLES-0x2000;
+          mywave3_init=1;
+        }
+        return mywave3;
+      }
+  }
+  return 0;
+}
+
+static uint16_t get_pcm(void *pcmpp,uint8_t waveid,void *userdata) {
+  return 0;
+}
 
 // Framebuffer is *big-endian* BGR565 in 16-bit, or BGR332 in 8-bit
 static uint8_t fb[96*64]={0};
@@ -22,33 +68,39 @@ static uint8_t input_state=0;
 
 #define SPRITE_IMAGE_SIZE_LIMIT (16*16)
 #define SPRITEC 1
-#define REDRAWC 1 /* to increase sprite count for performance testing; so we don't exhaust the static heap */
-//    1:  5469 = 183 Hz
-//   10:  5735 = 174 Hz
-//  100:  8120 = 123 Hz
-//  200:  9778 = 102 Hz
-//  500: 16176 =  61 Hz
-// 1000: 26783 =  37 Hz
-// ...those are 8x8. 16x16 also looks good, up to 120 or so
 
 static const uint8_t spritebits[SPRITE_IMAGE_SIZE_LIMIT]={
-  0x1e,0x1e,0x1e,0x00,0x00,0x1e,0x1e,0x1e, 0xe0,0xe0,0xe0,0x1e,0x1e,0x1e,0x1e,0x1e,
-  0x1e,0x1e,0x00,0xff,0xff,0x00,0x1e,0x1e, 0xe0,0x1e,0x1e,0xe0,0x1e,0x1e,0x1e,0x1e,
-  0x1e,0x00,0xff,0xff,0xff,0xff,0x00,0x1e, 0xe0,0x1e,0x1e,0x1e,0xe0,0x1e,0x1e,0x1e,
-  0x00,0xff,0xff,0xff,0xff,0xff,0xff,0x00, 0xe0,0x1e,0x1e,0x1e,0x1e,0xe0,0x1e,0x1e,
-  0x00,0xff,0xff,0xe0,0x03,0xff,0xff,0x00, 0xe0,0x1e,0x1e,0x1e,0x1e,0x1e,0xe0,0x1e,
-  0x00,0xff,0xe0,0xff,0xff,0x03,0xff,0x00, 0xe0,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0xe0,
-  0x00,0xff,0xe0,0xff,0xff,0x03,0xff,0x00, 0xe0,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0xe0,
-  0x1e,0x00,0x00,0x00,0x00,0x00,0x00,0x1e, 0xe0,0xe0,0xe0,0xe0,0xe0,0xe0,0xe0,0xe0,
-
-  0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03, 0x18,0x18,0x18,0x18,0x18,0x18,0x18,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,
-  0x03,0x1e,0x1e,0x1e,0x1e,0x1e,0x1e,0x03, 0x18,0x1e,0x1e,0x1e,0x1e,0x1e,0x18,0x1e,
-  0x1e,0x03,0x03,0x03,0x03,0x03,0x03,0x03, 0x18,0x18,0x18,0x18,0x18,0x18,0x1e,0x1e,
+#define _ 0x1e,
+#define K 0x00,
+#define W 0xff,
+#define Y 0x92,
+#define B 0xe0,
+#define G 0x1c,
+#define R 0x03,
+  _ _ _ _ _ K K K  K K K _ _ _ _ _
+  _ _ _ K K W W W  W W W K K _ _ _
+  _ _ K W W W W W  W W W W W K _ _
+  _ K W W W W B W  W B W W W W K _
+  _ K W W W B B W  W B B W W W K _
+  K W W W W B B W  W B B W W W W K
+  K W W W W B B W  W B B W W W W K
+  K W W W W W W W  W W W W W W W K
+  
+  K W W W W W W W  W W W W W W W K
+  K W W R W W W W  W W W W R W W K
+  K W W W R W W W  W W W R W W W K
+  _ K W W W R R R  R R R W W W K _
+  _ K W W W W W W  W R W W W W K _
+  _ _ K W W W W W  W W W W W K _ _
+  _ K _ K K W W W  W W W K K _ K _
+  K _ _ _ _ K K K  K K K _ _ _ _ K
+#undef _
+#undef K
+#undef W
+#undef Y
+#undef B
+#undef G
+#undef R
 };
 
 static struct sprite {
@@ -125,16 +177,17 @@ static void generate_tone_effect(int16_t *v,int c) {
 }
 
 void my_main_setup(void) {
+
+  softarcade_synth_init(&synth,22050,get_wave,get_pcm,0);
+
   tinyc_init();
 
   draw_bgbits(bgbits);
   init_sprites();
-  generate_noise_effect(beep,sizeof(beep)/sizeof(int16_t));
-  generate_tone_effect(boop,sizeof(boop)/sizeof(int16_t));
+  //generate_noise_effect(beep,sizeof(beep)/sizeof(int16_t));
+  //generate_tone_effect(boop,sizeof(boop)/sizeof(int16_t));
   
   tinyc_init_usb_log();
-
-  audio_init();
 }
 
 static void update_sprites(struct sprite *sprite,int i) {
@@ -251,12 +304,17 @@ static void check_time() {
     char report[64];
     snprintf(report,sizeof(report),
       "%d frames (SPRITEC=%d) millis=%d\n",
-      framec,SPRITEC*REDRAWC,millis()
+      framec,SPRITEC,millis()
     );
     tinyc_usb_log(report);
     framec=0;
   }
 }
+
+static uint8_t noteid=0x40;
+static uint8_t voiceid=0;
+static uint8_t waveid=0;
+static uint16_t songp=0;
 
 void my_main_loop() {
 
@@ -270,19 +328,31 @@ void my_main_loop() {
     tinyc_usb_log("dropped frame\n");
     next_time=now+16.66666;
   }
+  
+  /**
+  if (++songp>=20) {
+    songp=0;
+    softarcade_synth_event(&synth,0xd008|(voiceid<<8)); // terminate previous note
+    if (++voiceid>=8) voiceid=0;
+    if (++noteid>=0x60) noteid=0x40;
+    waveid++;
+    softarcade_synth_event(&synth,0x9000|(voiceid<<8)|waveid); // reset voice
+    softarcade_synth_event(&synth,0xa000|(voiceid<<8)|noteid); // set rate
+    softarcade_synth_event(&synth,0xc001); // ramp up
+    softarcade_synth_event(&synth,0xb060|(voiceid<<8)); // set level (+ramp)
+  }
+  /**/
 
   uint8_t pvstate=input_state;
   input_state=tinyc_read_input();
 
-  if ((input_state&TINYC_BUTTON_A)&&!(pvstate&TINYC_BUTTON_A)) PLAY_SOUND(beep)
-  if ((input_state&TINYC_BUTTON_B)&&!(pvstate&TINYC_BUTTON_B)) PLAY_SOUND(boop)
+  if ((input_state&TINYC_BUTTON_A)&&!(pvstate&TINYC_BUTTON_A)) ;//PLAY_SOUND(beep)
+  if ((input_state&TINYC_BUTTON_B)&&!(pvstate&TINYC_BUTTON_B)) ;//PLAY_SOUND(boop)
 
   update_sprites(spritev,SPRITEC);
 
   memcpy(fb,bgbits,sizeof(fb));
-  int i=REDRAWC; while (i-->0) {
-    draw_sprites(fb,spritev,SPRITEC);
-  }
+  draw_sprites(fb,spritev,SPRITEC);
 
   // My glyphs are 3x5, so advance by (3+1)*2+4=12 per byte.
   draw_hex_byte(fb+96+1+12*0,input_state);

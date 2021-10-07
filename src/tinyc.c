@@ -29,6 +29,8 @@
 #define SPI_MIN_CLOCK_DIVIDER (uint8_t)(1 + ((F_CPU - 1) / 12000000))
 #define SPI_MODE0 0x02
 
+static void tinyc_audio_init();
+
 /* Globals.
  */
 
@@ -295,6 +297,8 @@ void tinyc_init() {
   writeRemap();
   clearWindow(0,0,96,64);
   on();
+  
+  tinyc_audio_init();
 }
 
 /* Send framebuffer.
@@ -322,4 +326,59 @@ uint8_t tinyc_read_input() {
   if (!digitalRead(44)) state|=TINYC_BUTTON_A;
   if (!digitalRead(45)) state|=TINYC_BUTTON_B;
   return state;
+}
+
+/* Audio setup.
+ */
+
+#define SOUND_FREQUENCY 22050
+
+static int tcIsSyncing() {
+  return TC5->COUNT16.STATUS.reg & TC_STATUS_SYNCBUSY;
+}
+
+static void tcReset() {
+  TC5->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+  while(tcIsSyncing());
+  while(TC5->COUNT16.CTRLA.bit.SWRST);
+}
+
+static void tinyc_audio_init() {
+  analogWrite(A0, 0);
+  // Enable GCLK for TCC2 and TC5 (timer counter input clock)
+  GCLK->CLKCTRL.reg = (GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_ID(GCM_TC4_TC5));
+  while(GCLK->STATUS.bit.SYNCBUSY);
+  tcReset();
+  // Set Timer counter Mode to 16 bits
+  TC5->COUNT16.CTRLA.reg |= TC_CTRLA_MODE_COUNT16;
+  // Set TC5 mode as match frequency
+  TC5->COUNT16.CTRLA.reg |= TC_CTRLA_WAVEGEN_MFRQ;
+  TC5->COUNT16.CTRLA.reg |= TC_CTRLA_PRESCALER_DIV1;
+  TC5->COUNT16.CC[0].reg = (SystemCoreClock / SOUND_FREQUENCY - 1);
+  while(tcIsSyncing());
+  // Configure interrupt request
+  NVIC_DisableIRQ(TC5_IRQn);
+  NVIC_ClearPendingIRQ(TC5_IRQn);
+  NVIC_SetPriority(TC5_IRQn, 0);
+  NVIC_EnableIRQ(TC5_IRQn);
+  // Enable the TC5 interrupt request
+  TC5->COUNT16.INTENSET.bit.MC0 = 1;
+  while(tcIsSyncing());
+  // Enable TC
+  TC5->COUNT16.CTRLA.reg |= TC_CTRLA_ENABLE; // Fails here if TC5_Handler unset or unpopulated.
+  while(tcIsSyncing());
+}
+
+/* Update audio.
+ */
+
+void TC5_Handler() {
+  while(DAC->STATUS.bit.SYNCBUSY == 1);
+
+  int16_t sample=tinyc_client_update_synthesizer();
+  //DAC->DATA.reg=((sample>>6)+0x200)&0x3ff;
+  DAC->DATA.reg=((sample>>6)+0x200)&0x3ff;
+  
+  while(DAC->STATUS.bit.SYNCBUSY == 1);
+  TC5->COUNT16.INTFLAG.bit.MC0 = 1;
 }

@@ -10,6 +10,11 @@
 extern "C" {
 #endif
 
+/* You must implement this and return mixed audio one sample at a time.
+ * Use the full range -32768..32767.
+ */
+int16_t tinyc_client_update_synthesizer();
+
 void tinyc_init();
 
 // 96*64=6144 bytes
