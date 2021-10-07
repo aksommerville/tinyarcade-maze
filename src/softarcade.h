@@ -102,6 +102,15 @@ int softarcade_font_measure(
   const char *src,int8_t srcc
 );
 
+/* Audio -- both the data and the code -- consumes a huge chunk of precious memory.
+ * Making it optional.
+ */
+#ifndef SOFTARCADE_AUDIO_ENABLE
+  #define SOFTARCADE_AUDIO_ENABLE 0
+#endif
+
+#if SOFTARCADE_AUDIO_ENABLE
+
 /* Tuned wave playback.
  *************************************************************/
  
@@ -205,5 +214,7 @@ void softarcade_synth_event(struct softarcade_synth *synth,uint16_t event);
 void softarcade_synth_play_pcm(struct softarcade_synth *synth,const int16_t *v,uint16_t c);
 
 uint16_t softarcade_rate_from_noteid(const struct softarcade_synth *synth,uint8_t noteid);
+
+#endif /* SOFTARCADE_AUDIO_ENABLE */
 
 #endif

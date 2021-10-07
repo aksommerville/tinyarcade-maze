@@ -9,17 +9,18 @@ void softarcade_blit_unchecked(
 ) {
   uint8_t *dstrow=dst->v+dsty*dst->stride+dstx;
   const uint8_t *srcrow=src->v;
+  int8_t yi=src->h;
   if (src->colorkey) {
-    for (;dsty-->0;dstrow+=dst->stride,srcrow+=src->stride) {
+    for (;yi-->0;dstrow+=dst->stride,srcrow+=src->stride) {
       uint8_t *dstp=dstrow;
       const uint8_t *srcp=srcrow;
-      int8_t xi=dstx;
+      int8_t xi=src->w;
       for (;xi-->0;dstp++,srcp++) {
         if ((*srcp)!=src->colorkey) *dstp=*srcp;
       }
     }
   } else {
-    for (;dsty-->0;dstrow+=dst->stride,srcrow+=src->stride) {
+    for (;yi-->0;dstrow+=dst->stride,srcrow+=src->stride) {
       memcpy(dstrow,srcrow,src->w);
     }
   }
@@ -173,6 +174,8 @@ int softarcade_font_measure(
   }
   return rtn;
 }
+
+#if SOFTARCADE_AUDIO_ENABLE
 
 /* Update voice.
  */
@@ -429,3 +432,5 @@ uint16_t softarcade_rate_from_noteid(const struct softarcade_synth *synth,uint8_
   
   return softarcade_rate_by_noteid[noteid];
 }
+
+#endif
