@@ -5,7 +5,7 @@
  
 void softarcade_blit_unchecked(
   struct softarcade_image *dst,int8_t dstx,int8_t dsty,
-  struct softarcade_image *src
+  const struct softarcade_image *src
 ) {
   uint8_t *dstrow=dst->v+dsty*dst->stride+dstx;
   const uint8_t *srcrow=src->v;
@@ -31,7 +31,7 @@ void softarcade_blit_unchecked(
 
 void softarcade_blit(
   struct softarcade_image *dst,int8_t dstx,int8_t dsty,
-  struct softarcade_image *src
+  const struct softarcade_image *src
 ) {
   if (!dst||!src) return;
   struct softarcade_image sub=*src;

@@ -7,6 +7,7 @@
 #define SOFTARCADE_H
 
 #include <stdint.h>
+#include <string.h>
 
 /* Image: bgr332 image with optional colorkey.
  * Limit 127 pixels in each direction.
@@ -38,7 +39,7 @@ static inline void softarcade_image_clear(struct softarcade_image *image,uint8_t
  */
 void softarcade_blit_unchecked(
   struct softarcade_image *dst,int8_t dstx,int8_t dsty,
-  struct softarcade_image *src
+  const struct softarcade_image *src
 );
 
 /* Copy from (src) to (dst) respecting (src)'s colorkey.
@@ -48,7 +49,7 @@ void softarcade_blit_unchecked(
  */
 void softarcade_blit(
   struct softarcade_image *dst,int8_t dstx,int8_t dsty,
-  struct softarcade_image *src
+  const struct softarcade_image *src
 );
 
 /* Overwrite (dst) with an image handle pointing into (src) at the given rectangle.

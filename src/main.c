@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "tinyc.h"
 #include "softarcade.h"
 

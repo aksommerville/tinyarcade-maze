@@ -1,10 +1,12 @@
 /* tinyc.h
  * Alternative to TinyArcade libraries, with C linkage.
- * Not supporting audio, because I've already got ta_audio.h doing that.
+ * I'll implement this for other platforms, too, so we can build native workalikes of our TA apps.
  */
 
 #ifndef TINYC_H
 #define TINYC_H
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

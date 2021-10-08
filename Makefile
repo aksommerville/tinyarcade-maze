@@ -7,6 +7,9 @@ PROJECT_NAME:=maze
 PORT:=ttyACM0
 IDEROOT:=/opt/arduino-1.8.16
 
+# Empty, or a directory immediately under src, to build also for a non-TinyArcade platform.
+NATIVE_PLATFORM:=linux-glx
+
 # Likely constant, for Linux users.
 BUILDER:=$(IDEROOT)/arduino-builder
 PKGROOT:=$(wildcard ~/.arduino15/packages)
@@ -19,9 +22,16 @@ CACHEDIRNORMAL:=mid/cachen
 EXECARD:=out/0002.bin
 EXENORM:=out/0002-normal.bin
 
-SRCFILES:=$(filter-out src/dummy.cpp,$(SRCFILES))
+SRCFILES:=$(filter-out src/dummy.cpp %/config.mk,$(SRCFILES))
+SRCFILES_TINY:=$(foreach F,$(SRCFILES),$(if $(filter 2,$(words $(subst /, ,$F))),$F))
+ifneq (,$(NATIVE_PLATFORM))
+  SRCFILES_NATIVE:=$(filter src/$(NATIVE_PLATFORM)/%,$(SRCFILES)) src/softarcade.c src/main.c
+endif
 
 clean:;rm -rf mid out
+
+#---------------------------------------------------------------
+# Rules for TinyArcade.
 
 $(TMPDIR):;mkdir -p $@
 $(CACHEDIR):;mkdir -p $@
@@ -58,7 +68,7 @@ $1:$2 $3; \
   -prefs=runtime.tools.CMSIS-4.5.0.path=$(PKGROOT)/arduino/tools/CMSIS/4.5.0 \
   -prefs=runtime.tools.arduinoOTA.path=$(PKGROOT)/arduino/tools/arduinoOTA/1.2.1 \
   -prefs=runtime.tools.arduinoOTA-1.2.1.path=$(PKGROOT)/arduino/tools/arduinoOTA/1.2.1 \
-  src/dummy.cpp $(SRCFILES) \
+  src/dummy.cpp $(SRCFILES_TINY) \
   2>&1 | etc/tool/reportstatus.py
   # Add -verbose to taste
 endef
@@ -79,3 +89,38 @@ launch:$(EXENORM); \
   stty -F /dev/$(PORT) 1200 ; \
   sleep 2 ; \
   $(PKGROOT)/arduino/tools/bossac/1.7.0-arduino3/bossac -i -d --port=$(PORT) -U true -i -e -w $(EXENORM) -R
+  
+#----------------------------------------------------------
+# Rules for native platform.
+
+ifndef (,$(NATIVE_PLATFORM))
+
+MIDDIR:=mid/$(NATIVE_PLATFORM)
+OUTDIR:=out/$(NATIVE_PLATFORM)
+
+EXE:=$(OUTDIR)/maze
+
+CMD_PRERUN:=
+CMD_POSTRUN:=
+
+CC:=gcc -c -MMD -O2 -Isrc -Werror -Wimplicit
+LD:=gcc
+LDPOST:=
+
+include src/$(NATIVE_PLATFORM)/config.mk
+
+CFILES_NATIVE:=$(filter %.c,$(SRCFILES_NATIVE))
+OFILES_NATIVE:=$(patsubst src/%,$(MIDDIR)/%.o,$(basename $(CFILES_NATIVE)))
+-include $(OFILES_NATIVE:.o=.d)
+
+$(MIDDIR)/%.o:src/%.c;$(PRECMD) $(CC) -o $@ $<
+
+all:$(EXE)
+$(EXE):$(OFILES_NATIVE);$(PRECMD) $(LD) -o $@ $^ $(LDPOST)
+native:$(EXE)
+
+run:$(EXE);$(CMD_PRERUN) $(EXE) $(CMD_POSTRUN)
+
+else
+native:;echo "NATIVE_PLATFORM unset" ; exit 1
+endif
