@@ -13,8 +13,8 @@ static int rb_glx_evt_key(struct rb_video *video,XKeyEvent *evt,int value) {
     case XK_Up: btnid=TINYC_BUTTON_UP; break;
     case XK_Left: btnid=TINYC_BUTTON_LEFT; break;
     case XK_Right: btnid=TINYC_BUTTON_RIGHT; break;
-    case XK_Z: btnid=TINYC_BUTTON_A; break;
-    case XK_X: btnid=TINYC_BUTTON_B; break;
+    case XK_z: btnid=TINYC_BUTTON_A; break;
+    case XK_x: btnid=TINYC_BUTTON_B; break;
   }
   if (btnid) {
     if (value) VIDEO->input|=btnid;

@@ -19,8 +19,8 @@ TMPDIR:=mid/build
 CACHEDIR:=mid/cache
 TMPDIRNORMAL:=mid/buildn
 CACHEDIRNORMAL:=mid/cachen
-EXECARD:=out/0002.bin
-EXENORM:=out/0002-normal.bin
+EXECARD:=out/$(PROJECT_NAME).bin
+EXENORM:=out/$(PROJECT_NAME)-normal.bin
 
 SRCFILES:=$(filter-out src/dummy.cpp %/config.mk,$(SRCFILES))
 SRCFILES_TINY:=$(foreach F,$(SRCFILES),$(if $(filter 2,$(words $(subst /, ,$F))),$F))
