@@ -19,3 +19,9 @@ If you set `NATIVE_PLATFORM:=linux-glx` in the Makefile, it also builds a versio
 - `make run` to build the native binary and launch it.
 
 "Native" is not an emulator! It's entirely possible a thing could run Native but fail on the hardware.
+
+## License
+
+boooooring
+
+Public Domain. Use at your own risk. NO WARRANTY.
