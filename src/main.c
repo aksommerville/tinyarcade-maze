@@ -139,40 +139,84 @@ static int8_t mousedy=0;
 static uint8_t cheesecol=0;
 static uint8_t cheeserow=0;
 
-static uint8_t add_path_to_maze(uint8_t col,uint8_t row,uint8_t *visited) {
+/* From unvisited cell (col,row), knock down walls into a random unvisited neighbor until we can't.
+ */
+static void drunk_walk(uint8_t col,uint8_t row,uint8_t *visited) {
+  while (1) {
+    uint8_t p=row*COLC+col;
+    visited[p]=1;
 
-  // Abort if we've already been here.
-  uint8_t p=row*COLC+col;
-  if (visited[p]) return 0;
-  visited[p]=1;
- _again_:;
+    struct neighbor { int8_t dx,dy; } neighborv[4];
+    uint8_t neighborc=0;
+    if ((col>0)&&!visited[p-1]) neighborv[neighborc++]=(struct neighbor){-1,0};
+    if ((row>0)&&!visited[p-COLC]) neighborv[neighborc++]=(struct neighbor){0,-1};
+    if ((col<COLC-1)&&!visited[p+1]) neighborv[neighborc++]=(struct neighbor){1,0};
+    if ((row<ROWC-1)&&!visited[p+COLC]) neighborv[neighborc++]=(struct neighbor){0,1};
+    if (!neighborc) return; // Painted into a corner.
   
-  // Which ways can we move? (as in which ones are BLOCKED, which walls can we eliminate)
-  struct option { int8_t dx,dy; } optionv[4];
-  int optionc=0;
-  if ((col>0)&&(maze[p-1]&WALL_RIGHT)) optionv[optionc++]=(struct option){-1,0};
-  if ((row>0)&&(maze[p-COLC]&WALL_DOWN)) optionv[optionc++]=(struct option){0,-1};
-  if ((col<COLC-1)&&(maze[p]&WALL_RIGHT)) optionv[optionc++]=(struct option){1,0};
-  if ((row<ROWC-1)&&(maze[p]&WALL_DOWN)) optionv[optionc++]=(struct option){0,1};
-  if (!optionc) return 0; // We've painted ourselves into a corner -- tell the caller so he can fork.
-  struct option option=optionv[rand()%optionc];
+    struct neighbor neighbor=neighborv[rand()%neighborc];
+         if (neighbor.dx<0) maze[p-1]&=~WALL_RIGHT;
+    else if (neighbor.dx>0) maze[p]&=~WALL_RIGHT;
+    else if (neighbor.dy<0) maze[p-COLC]&=~WALL_DOWN;
+    else if (neighbor.dy>0) maze[p]&=~WALL_DOWN;
   
-  if (option.dx>0) maze[p]&=~WALL_RIGHT;
-  else if (option.dx<0) maze[p-1]&=~WALL_RIGHT;
-  if (option.dy>0) maze[p]&=~WALL_DOWN;
-  else if (option.dy<0) maze[p-COLC]&=~WALL_DOWN;
-  
-  // If the cell we opened to was already visited and committed, we're done.
-  if (visited[p+option.dx+option.dy*COLC]>1) return 1;
-  
-  // If the child fails, and we had multiple options, try again.
-  if (!add_path_to_maze(col+option.dx,row+option.dy,visited)) {
-    if (optionc>1) {
-      goto _again_;
-    }
-    return 0;
+    col+=neighbor.dx;
+    row+=neighbor.dy;
   }
+}
+
+/* Select an unvisited cell with a visited cardinal neighbor.
+ * ("bar hop" = where the next "drunk walk" begins).
+ * Returns nonzero if we found one, zero if there's none.
+ * If we find one, we break the wall to the visited neighbor.
+ */
+static uint8_t bar_hop(uint8_t *col,uint8_t *row,const uint8_t *visited) {
+
+  /* Gather all the candidates and select randomly among them.
+   * This might be overkill -- we could search in order and use the first candidate.
+   * But I suspect if we operated in order like that, we'd see longer paths up top and stubs near the bottom.
+   * So random, in the interest of uniformity.
+   */
+  uint8_t candidatev[COLC*ROWC];
+  uint8_t candidatec=0;
+  const uint8_t *ckv=visited;
+  uint8_t cky=0;
+  for (;cky<ROWC;cky++) {
+    uint8_t ckx=0;
+    for (;ckx<COLC;ckx++,ckv++) {
+      if (*ckv) continue; // visited
+      if (
+        ((ckx>0)&&ckv[-1])||
+        ((cky>0)&&ckv[-COLC])||
+        ((ckx<COLC-1)&&ckv[1])||
+        ((cky<ROWC-1)&&ckv[COLC])
+      ) {
+        candidatev[candidatec++]=cky*COLC+ckx;
+      }
+    }
+  }
+  if (!candidatec) return 0;
   
+  uint8_t p=candidatev[rand()%candidatec];
+  *col=p%COLC;
+  *row=p/COLC;
+  
+  /* If there's more than one visited neighbor, again pick one randomly.
+   */
+  struct neighbor { int8_t dx,dy; } neighborv[4];
+  uint8_t neighborc=0;
+  if ((*col>0)&&visited[p-1]) neighborv[neighborc++]=(struct neighbor){-1,0};
+  if ((*row>0)&&visited[p-COLC]) neighborv[neighborc++]=(struct neighbor){0,-1};
+  if ((*col<COLC-1)&&visited[p+1]) neighborv[neighborc++]=(struct neighbor){1,0};
+  if ((*row<ROWC-1)&&visited[p+COLC]) neighborv[neighborc++]=(struct neighbor){0,1};
+  if (!neighborc) return 0; // oops!
+  
+  struct neighbor neighbor=neighborv[rand()%neighborc];
+       if (neighbor.dx<0) maze[p-1]&=~WALL_RIGHT;
+  else if (neighbor.dx>0) maze[p]&=~WALL_RIGHT;
+  else if (neighbor.dy<0) maze[p-COLC]&=~WALL_DOWN;
+  else if (neighbor.dy>0) maze[p]&=~WALL_DOWN;
+
   return 1;
 }
 
@@ -181,37 +225,33 @@ static void generate_maze() {
 
   // Select random positions for the mouse and the cheese.
   // To prevent collisions, put the mouse always in the left half and cheese always in the right.
+  // (I think that is also good psychologically? Player always moves rightward.)
   mousecol=rand()%(COLC>>1);
   mouserow=rand()%ROWC;
   cheesecol=(COLC>>1)+(rand()%(COLC>>1));
   cheeserow=rand()%ROWC;
   
-  /* XXX This algorithm produces legal mazes but they are too sparse.
-   */
-  
-  // Start with every wall, and a "visited" map blank except the mouse.
+  // Start with every wall, and a blank "visited" map.
   memset(maze,WALL_RIGHT|WALL_DOWN,sizeof(maze));
   uint8_t visited[COLC*ROWC]={0};
-  visited[mouserow*COLC+mousecol]=2;
   
-  // Drunk-walk from the cheese to the mouse to ensure that such a path will always exist.
-  {
-    add_path_to_maze(cheesecol,cheeserow,visited);
-    uint8_t *p=visited;
-    int i=COLC*ROWC;
-    for (;i-->0;p++) if (*p) *p=2;
+  /* 1. Pick a random cell.
+   * 2. Drunk-walk until we're painted into a corner.
+   * 3. Select an unvisited cell with a visited cardinal neighbor.
+   * 4. If there isn't one, we're done.
+   * 5. Break the wall between the new cell and its visited neighbor.
+   * 6. Goto 2.
+   */
+  uint8_t col=rand()%COLC;
+  uint8_t row=rand()%ROWC;
+  while (1) {
+    drunk_walk(col,row,visited);
+    if (!bar_hop(&col,&row,visited)) break;
   }
-
-  // Now from each cell, knock down walls randomly until it reaches a visited cell.
-  uint8_t row=0; for (;row<ROWC;row++) {
-    uint8_t col=0; for (;col<COLC;col++) {
-      add_path_to_maze(col,row,visited);
-      // Commit the visits: 1s are transient, 2s are permanent.
-      uint8_t *p=visited;
-      int i=COLC*ROWC;
-      for (;i-->0;p++) if (*p) *p=2;
-    }
-  }
+  
+  // It might make better mazes if we now move mouse and cheese until they reach a dead-end.
+  // That's more complicated than it sounds.
+  // Ignoring it for now.
 }
 
 static void draw_right_wall(uint8_t *dst) {
