@@ -72,72 +72,28 @@ int16_t tinyc_client_update_synthesizer() { return 0; }
 /* Video.
  ***********************************************************************/
  
-#define IDLE_BGCOLOR 0x92
-static uint8_t bgcolor=IDLE_BGCOLOR;
- 
 SOFTARCADE_IMAGE_DECLARE(fb,96,64,0)
+SOFTARCADE_IMAGE_DECLARE(bgbits,96,64,0)
 
-#define _ 0x1c,
-#define K 0x00,
-#define W 0xff,
-#define Y 0x92,
-#define B 0xe0,
-#define G 0x18,
-#define R 0x03,
-SOFTARCADE_IMAGE_DECLARE(spritebits,16,16,
-  _ _ _ _ _ K K K  K K K _ _ _ _ _
-  _ _ _ K K W W W  W W W K K _ _ _
-  _ _ K W W W W W  W W W W W K _ _
-  _ K W W W W B W  W B W W W W K _
-  _ K W W W B B W  W B B W W W K _
-  K W W W W B B W  W B B W W W W K
-  K W W W W B B W  W B B W W W W K
-  K W W W W W W W  W W W W W W W K
-  
-  K W W W W W W W  W W W W W W W K
-  K W W R W W W W  W W W W R W W K
-  K W W W R W W W  W W W R W W W K
-  _ K W W W R R R  R R R W W W K _
-  _ K W W W W W W  W R W W W W K _
-  _ _ K W W W W W  W W W W W K _ _
-  _ K _ K K W W W  W W W K K _ K _
-  K _ _ _ _ K K K  K K K _ _ _ _ K
+SOFTARCADE_IMAGE_DECLARE(mouse,7,7,
+  28,28,109,109,109,109,109,
+  109,28,28,0,109,0,28,
+  28,109,146,109,109,109,28,
+  146,146,146,109,109,109,146,
+  146,146,146,146,146,146,146,
+  146,146,146,146,146,146,146,
+  146,28,146,28,146,28,146,
 )
 
-SOFTARCADE_IMAGE_DECLARE(npcbits,8,8,
-  B _ _ _ _ _ K _
-  _ B _ _ _ K G K
-  _ _ B _ K G G K
-  _ _ _ K G G G K
-  _ _ K G G G G K
-  _ K G G G R R K
-  K G G G G R R K
-  _ K K K K K K _
+SOFTARCADE_IMAGE_DECLARE(cheese,7,7,
+  28,28,28,28,28,28,28,
+  28,55,191,191,28,28,28,
+  28,55,55,191,191,28,28,
+  28,191,55,55,191,191,28,
+  28,55,55,55,55,55,28,
+  28,28,28,55,191,55,28,
+  28,28,28,28,28,28,28,
 )
-
-SOFTARCADE_IMAGE_DECLARE(fourbits,4,4,
-  _ K K _
-  K R G K
-  K B Y K
-  _ K K _
-)
-
-SOFTARCADE_IMAGE_DECLARE(twobits,2,2,
-  W Y
-  Y K
-)
-
-SOFTARCADE_IMAGE_DECLARE(pixel,1,1,
-  W
-)
-
-#undef _
-#undef K
-#undef W
-#undef Y
-#undef B
-#undef G
-#undef R
 
 static struct softarcade_font font={
   .metrics={
@@ -163,93 +119,209 @@ static struct softarcade_font font={
 };
 
 
-/* Sprites.
+/* Game logic.
  **************************************************************/
+ 
+#define COLC 12
+#define ROWC 8
 
-/* Silent, 16x16 => 60
- * Silent, 8x8 => 210
- * Silent, 4x4 => 550
- * Silent, 2x2 => 900
- * Silent, 1x1 => 1100
- */
-#define SPRITEC 20
+// Each cell of the maze has two flags.
+#define WALL_RIGHT 0x01
+#define WALL_DOWN  0x02
+ 
+static uint8_t maze[COLC*ROWC]={0};
+static uint8_t mousecol=0;
+static uint8_t mouserow=0;
+static int8_t mousex=0;
+static int8_t mousey=0;
+static int8_t mousedx=0;
+static int8_t mousedy=0;
+static uint8_t cheesecol=0;
+static uint8_t cheeserow=0;
 
-static struct sprite {
-  int8_t x,y;
-  int8_t dx,dy;
-  const struct softarcade_image *image;
-} spritev[SPRITEC];
+static uint8_t add_path_to_maze(uint8_t col,uint8_t row,uint8_t *visited) {
 
-static int framec=0;
+  // Abort if we've already been here.
+  uint8_t p=row*COLC+col;
+  if (visited[p]) return 0;
+  visited[p]=1;
+ _again_:;
+  
+  // Which ways can we move? (as in which ones are BLOCKED, which walls can we eliminate)
+  struct option { int8_t dx,dy; } optionv[4];
+  int optionc=0;
+  if ((col>0)&&(maze[p-1]&WALL_RIGHT)) optionv[optionc++]=(struct option){-1,0};
+  if ((row>0)&&(maze[p-COLC]&WALL_DOWN)) optionv[optionc++]=(struct option){0,-1};
+  if ((col<COLC-1)&&(maze[p]&WALL_RIGHT)) optionv[optionc++]=(struct option){1,0};
+  if ((row<ROWC-1)&&(maze[p]&WALL_DOWN)) optionv[optionc++]=(struct option){0,1};
+  if (!optionc) return 0; // We've painted ourselves into a corner -- tell the caller so he can fork.
+  struct option option=optionv[rand()%optionc];
+  
+  if (option.dx>0) maze[p]&=~WALL_RIGHT;
+  else if (option.dx<0) maze[p-1]&=~WALL_RIGHT;
+  if (option.dy>0) maze[p]&=~WALL_DOWN;
+  else if (option.dy<0) maze[p-COLC]&=~WALL_DOWN;
+  
+  // If the cell we opened to was already visited and committed, we're done.
+  if (visited[p+option.dx+option.dy*COLC]>1) return 1;
+  
+  // If the child fails, and we had multiple options, try again.
+  if (!add_path_to_maze(col+option.dx,row+option.dy,visited)) {
+    if (optionc>1) {
+      goto _again_;
+    }
+    return 0;
+  }
+  
+  return 1;
+}
 
-static void init_sprites() {
-  struct sprite *sprite=spritev;
-  int i=SPRITEC;
-  for (;i-->0;sprite++) {
-    if (i) sprite->image=&image_npcbits;
-    else sprite->image=&image_spritebits;
-    sprite->x=rand()%(96-sprite->image->w);
-    sprite->y=rand()%(64-sprite->image->h);
-    do {
-      sprite->dx=(rand()%3)-1;
-      sprite->dy=(rand()%3)-1;
-    } while (!sprite->dx&&!sprite->dy);
+static void generate_maze() {
+  srand(millis());
+
+  // Select random positions for the mouse and the cheese.
+  // To prevent collisions, put the mouse always in the left half and cheese always in the right.
+  mousecol=rand()%(COLC>>1);
+  mouserow=rand()%ROWC;
+  cheesecol=(COLC>>1)+(rand()%(COLC>>1));
+  cheeserow=rand()%ROWC;
+  
+  /* XXX This algorithm produces legal mazes but they are too sparse.
+   */
+  
+  // Start with every wall, and a "visited" map blank except the mouse.
+  memset(maze,WALL_RIGHT|WALL_DOWN,sizeof(maze));
+  uint8_t visited[COLC*ROWC]={0};
+  visited[mouserow*COLC+mousecol]=2;
+  
+  // Drunk-walk from the cheese to the mouse to ensure that such a path will always exist.
+  {
+    add_path_to_maze(cheesecol,cheeserow,visited);
+    uint8_t *p=visited;
+    int i=COLC*ROWC;
+    for (;i-->0;p++) if (*p) *p=2;
+  }
+
+  // Now from each cell, knock down walls randomly until it reaches a visited cell.
+  uint8_t row=0; for (;row<ROWC;row++) {
+    uint8_t col=0; for (;col<COLC;col++) {
+      add_path_to_maze(col,row,visited);
+      // Commit the visits: 1s are transient, 2s are permanent.
+      uint8_t *p=visited;
+      int i=COLC*ROWC;
+      for (;i-->0;p++) if (*p) *p=2;
+    }
   }
 }
 
-static void update_sprites(struct sprite *sprite,int i,uint8_t input_state) {
-  for (;i-->0;sprite++) {
+static void draw_right_wall(uint8_t *dst) {
+  dst+=7;
+  int8_t i=8; 
+  for (;i-->0;dst+=96) *dst=0x24;
+}
 
-    if (!i) {
-      switch (input_state&(TINYC_BUTTON_LEFT|TINYC_BUTTON_RIGHT)) {
-        case TINYC_BUTTON_LEFT: sprite->dx=-1; break;
-        case TINYC_BUTTON_RIGHT: sprite->dx=1; break;
-        default: sprite->dx=0;
+static void draw_down_wall(uint8_t *dst) {
+  dst+=96*7;
+  int8_t i=8;
+  for (;i-->0;dst++) *dst=0x24;
+}
+
+static void draw_bottom_right_corner(uint8_t *dst) {
+  dst[96*7+7]=0x24;
+}
+
+static void draw_maze() {
+  memset(image_bgbits.v,0x49,96*64);
+  const uint8_t *src=maze;
+  uint8_t row=0; for (;row<ROWC;row++) {
+    uint8_t col=0; for (;col<COLC;col++,src++) {
+      if (!*src) {
+        // A quirk that the meeting of a rightward and downward wall would drop its corner pixel.
+        if (
+          (col<COLC-1)&&(row<ROWC-1)&&
+          (src[1]&WALL_DOWN)&&
+          (src[COLC]&WALL_RIGHT)
+        ) {
+          draw_bottom_right_corner(image_bgbits.v+(row<<3)*96+(col<<3));
+        }
+        continue;
       }
-      switch (input_state&(TINYC_BUTTON_UP|TINYC_BUTTON_DOWN)) {
-        case TINYC_BUTTON_UP: sprite->dy=-1; break;
-        case TINYC_BUTTON_DOWN: sprite->dy=1; break;
-        default: sprite->dy=0;
+      if ((*src)&WALL_RIGHT) {
+        draw_right_wall(image_bgbits.v+(row<<3)*96+(col<<3));
+      }
+      if ((*src)&WALL_DOWN) {
+        draw_down_wall(image_bgbits.v+(row<<3)*96+(col<<3));
       }
     }
-    
-    sprite->x+=sprite->dx;
-    if ((sprite->x<0)&&(sprite->dx<0)) sprite->dx=-sprite->dx;
-    else if ((sprite->x+sprite->image->w>96)&&(sprite->dx>0)) sprite->dx=-sprite->dx;
-
-    sprite->y+=sprite->dy;
-    if ((sprite->y<0)&&(sprite->dy<0)) sprite->dy=-sprite->dy;
-    else if ((sprite->y+sprite->image->h>64)&&(sprite->dy>0)) sprite->dy=-sprite->dy;
   }
 }
 
-static void draw_sprites(struct sprite *sprite,int i) {
-  for (;i-->0;sprite++) {
-    softarcade_blit(&image_fb,sprite->x,sprite->y,sprite->image);
-  }
+static void new_maze() {
+  generate_maze();
+  draw_maze();
+  mousex=mousecol<<3;
+  mousey=mouserow<<3;
+  mousedx=0;
+  mousedy=0;
 }
 
-/* Timing.
- **************************************************/
+static uint8_t check_cheese() {
+  if ((mousecol==cheesecol)&&(mouserow==cheeserow)) {
+    new_maze();
+    return 1;
+  }
+  return 0;
+}
 
-static double next_time=0.0;
+static void update_mouse(uint8_t input) {
 
-static void check_time() {
-  framec++;
-  if (framec>=1000) {
-    char report[64];
-    snprintf(report,sizeof(report),
-      "%d frames (SPRITEC=%d) millis=%d\n",
-      framec,SPRITEC,millis()
-    );
-    tinyc_usb_log(report);
-    framec=0;
+  // Animate motion.
+  if (mousedx) {
+    mousex+=mousedx;
+    if (!(mousex&7)) {
+      mousedx=0;
+      if (check_cheese()) return;
+    }
+  }
+  if (mousedy) {
+    mousey+=mousedy;
+    if (!(mousey&7)) {
+      mousedy=0;
+      if (check_cheese()) return;
+    }
+  }
+  
+  // Consider new motion.
+  if (!mousedx&&!mousedy) {
+    switch (input&(TINYC_BUTTON_LEFT|TINYC_BUTTON_RIGHT)) {
+      case TINYC_BUTTON_LEFT: if ((mousecol>0)&&!(maze[mouserow*COLC+mousecol-1]&WALL_RIGHT)) {
+          mousecol--;
+          mousedx=-1;
+        } break;
+      case TINYC_BUTTON_RIGHT: if ((mousecol<COLC-1)&&!(maze[mouserow*COLC+mousecol]&WALL_RIGHT)) {
+          mousecol++;
+          mousedx=1;
+        } break;
+    }
+  }
+  if (!mousedx&&!mousedy) {
+    switch (input&(TINYC_BUTTON_UP|TINYC_BUTTON_DOWN)) {
+      case TINYC_BUTTON_UP: if ((mouserow>0)&&!(maze[(mouserow-1)*COLC+mousecol]&WALL_DOWN)) {
+          mouserow--;
+          mousedy=-1;
+        } break;
+      case TINYC_BUTTON_DOWN: if ((mouserow<ROWC-1)&&!(maze[mouserow*COLC+mousecol]&WALL_DOWN)) {
+          mouserow++;
+          mousedy=1;
+        } break;
+    }
   }
 }
 
 /* Main loop.
  ******************************************************************/
 
+static double next_time=0.0;
 static uint8_t noteid=0x40;
 static uint8_t voiceid=0;
 static uint8_t waveid=0;
@@ -266,59 +338,16 @@ void loop() {
   if (next_time<now) {
     tinyc_usb_log("dropped frame\n");
     next_time=now+16.66666;
-    bgcolor=IDLE_BGCOLOR+15;
   }
-  
-  #if SOFTARCADE_AUDIO_ENABLE
-  /**
-  if (++songp>=20) {
-    songp=0;
-    softarcade_synth_event(&synth,0xd008|(voiceid<<8)); // terminate previous note
-    if (++voiceid>=8) voiceid=0;
-    if (++noteid>=0x60) noteid=0x40;
-    waveid++;
-    softarcade_synth_event(&synth,0x9000|(voiceid<<8)|waveid); // reset voice
-    softarcade_synth_event(&synth,0xa000|(voiceid<<8)|noteid); // set rate
-    softarcade_synth_event(&synth,0xc001); // ramp up
-    softarcade_synth_event(&synth,0xb060|(voiceid<<8)); // set level (+ramp)
-  }
-  /**/
-  #endif
 
   uint8_t input_state=tinyc_read_input();
-  update_sprites(spritev,SPRITEC,input_state);
+  update_mouse(input_state);
 
-  if (bgcolor>IDLE_BGCOLOR) bgcolor--;
-  softarcade_image_clear(&image_fb,bgcolor);
-  draw_sprites(spritev,SPRITEC);
-  
-  if (input_state&TINYC_BUTTON_A) {
-    int8_t y=1;
-    #define DRAWTEXT(str) { \
-      const char message[]=str; \
-      softarcade_font_render(&image_fb,1,y,&font,message,sizeof(message)-1,0xff); \
-      y+=8; \
-    }
-    DRAWTEXT("The quick brown fox")
-    DRAWTEXT("jumps over the lazy")
-    DRAWTEXT("dog 1234567890 times.")
-    #undef DRAWTEXT
-  } else if (input_state&TINYC_BUTTON_B) {
-    int8_t y=1;
-    #define DRAWTEXT(str) { \
-      const char message[]=str; \
-      softarcade_font_render(&image_fb,1,y,&font,message,sizeof(message)-1,0x03); \
-      y+=8; \
-    }
-    DRAWTEXT("THE QUICK BROWN FOX")
-    DRAWTEXT("JUMPS OVER THE LAZY")
-    DRAWTEXT("DOG 1234567890 TIMES!")
-    #undef DRAWTEXT
-  }
+  memcpy(image_fb.v,image_bgbits.v,96*64);
+  softarcade_blit_unchecked(&image_fb,mousex,mousey,&image_mouse);
+  softarcade_blit_unchecked(&image_fb,cheesecol<<3,cheeserow<<3,&image_cheese);
 
   tinyc_send_framebuffer(image_fb.v);
-  
-  check_time();
 }
 
 /* Initialize.
@@ -332,9 +361,10 @@ void setup() {
 
   tinyc_init();
 
-  init_sprites();
-  image_spritebits.colorkey=0x1c;
-  image_npcbits.colorkey=0x1c;
+  image_mouse.colorkey=0x1c;
+  image_cheese.colorkey=0x1c;
+  
+  new_maze();
   
   tinyc_init_usb_log();
 }

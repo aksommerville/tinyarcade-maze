@@ -50,6 +50,7 @@ struct rb_video_glx {
   int screensaver_inhibited;
   int focus;
   int quit_requested;
+  uint8_t input;
   
   GLuint texid;
   

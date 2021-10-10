@@ -12,4 +12,6 @@ int glx_swap(struct rb_video_glx *glx,const void *fb_96_64_8);
 // 0 if user requested to terminate, 1 to carry on
 int glx_update(struct rb_video_glx *glx);
 
+uint8_t glx_get_input(const struct rb_video_glx *glx);
+
 #endif

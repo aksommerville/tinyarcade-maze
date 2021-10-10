@@ -176,7 +176,7 @@ uint8_t tinyc_read_input() {
   if (glx) {
     if (glx_update(glx)<=0) quit_requested=1;
   }
-  return input;
+  return input|glx_get_input(glx);
 }
 
 // linux only

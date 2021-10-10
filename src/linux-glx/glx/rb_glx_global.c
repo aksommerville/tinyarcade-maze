@@ -425,3 +425,7 @@ void glx_del(struct rb_video_glx *glx) {
   _rb_glx_del(&glx->hdr);
   free(glx);
 }
+
+uint8_t glx_get_input(const struct rb_video_glx *glx) {
+  return glx->input;
+}

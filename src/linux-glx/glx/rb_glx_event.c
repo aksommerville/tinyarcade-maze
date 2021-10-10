@@ -1,37 +1,25 @@
 #include "rb_glx_internal.h"
+#include "tinyc.h"
+#include <X11/keysym.h>
 
 /* Key press, release, or repeat.
  */
  
 static int rb_glx_evt_key(struct rb_video *video,XKeyEvent *evt,int value) {
-  fprintf(stderr,"TODO %s %d = %d\n",__func__,evt->keycode,value);
-#if 0//TODO
-  /* Pass the raw keystroke. */
-  if (video->delegate.cb_key) {
-    KeySym keysym=XkbKeycodeToKeysym(VIDEO->dpy,evt->keycode,0,0);
-    if (keysym) {
-      int keycode=rb_glx_usb_usage_from_keysym((int)keysym);
-      if (keycode) {
-        if (video->delegate.cb_key(video,keycode,value)<0) return -1;
-      }
-    }
+  KeySym keysym=XkbKeycodeToKeysym(VIDEO->dpy,evt->keycode,0,0);
+  uint8_t btnid=0;
+  switch (keysym) {
+    case XK_Down: btnid=TINYC_BUTTON_DOWN; break;
+    case XK_Up: btnid=TINYC_BUTTON_UP; break;
+    case XK_Left: btnid=TINYC_BUTTON_LEFT; break;
+    case XK_Right: btnid=TINYC_BUTTON_RIGHT; break;
+    case XK_Z: btnid=TINYC_BUTTON_A; break;
+    case XK_X: btnid=TINYC_BUTTON_B; break;
   }
-  
-  /* Pass text if press or repeat, and text can be acquired. */
-  if (value&&video->delegate.cb_text) {
-    int shift=(evt->state&ShiftMask)?1:0;
-    KeySym tkeysym=XkbKeycodeToKeysym(VIDEO->dpy,evt->keycode,0,shift);
-    if (shift&&!tkeysym) { // If pressing shift makes this key "not a key anymore", fuck that and pretend shift is off
-      tkeysym=XkbKeycodeToKeysym(VIDEO->dpy,evt->keycode,0,0);
-    }
-    if (tkeysym) {
-      int codepoint=rb_glx_codepoint_from_keysym(tkeysym);
-      if (codepoint) {
-        if (video->delegate.cb_text(video,codepoint)<0) return -1;
-      }
-    }
+  if (btnid) {
+    if (value) VIDEO->input|=btnid;
+    else VIDEO->input&=~btnid;
   }
-#endif
   return 0;
 }
 
