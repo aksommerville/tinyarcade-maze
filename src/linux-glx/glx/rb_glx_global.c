@@ -61,7 +61,7 @@ static int rb_glx_startup(struct rb_video *video) {
   //int w=WidthOfScreen(ScreenOfDisplay(VIDEO->dpy,0));
   //int h=HeightOfScreen(ScreenOfDisplay(VIDEO->dpy,0));
   //fprintf(stderr,"screen %dx%d\n",w,h);
-  int scale=5;
+  int scale=10;
   video->winw=96*scale;
   video->winh=64*scale;
   
