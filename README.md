@@ -2,6 +2,8 @@
 
 My first attempt at a game for TinyArcade [https://tinycircuits.com/].
 
+Guide the mouse through a randomly-generated maze to get the cheese.
+
 ## Requirements
 
 - Arduino IDE 1.8.16.
@@ -21,7 +23,5 @@ If you set `NATIVE_PLATFORM:=linux-glx` in the Makefile, it also builds a versio
 "Native" is not an emulator! It's entirely possible a thing could run Native but fail on the hardware.
 
 ## License
-
-boooooring
 
 Public Domain. Use at your own risk. NO WARRANTY.
